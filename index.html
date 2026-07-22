@@ -138,7 +138,6 @@ select#scaleSel option{background:var(--panel);color:var(--ink)}
 .cell .vals{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-top:6px}
 .cell .v{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:26px;font-weight:600;color:var(--ink);letter-spacing:-.01em;line-height:1}
 .cell .u{font-size:12px;color:var(--ink-faint);font-family:"JetBrains Mono",ui-monospace,monospace}
-.cell.two .v{font-size:21px}
 .cell .bracket{font-size:11px;color:var(--ink-faint);margin-top:7px;font-family:"JetBrains Mono",ui-monospace,monospace}
 .cell .none{font-size:19px;color:var(--ink-faint);font-family:"JetBrains Mono",ui-monospace,monospace;font-weight:500}
 .cell.anchor{background:linear-gradient(180deg,rgba(217,168,95,.13),rgba(217,168,95,.02))}
@@ -223,9 +222,9 @@ footer .mono{color:var(--ink-dim)}
     <div class="head-inner">
       <div class="title-block">
         <h1>Steel Hardness Converter</h1>
-        <div class="sub">Cross-scale conversion by direct table lookup &mdash; no proprietary formulas</div>
+        <div class="sub">Cross-scale conversion by direct table lookup, rounded per ASTM E29</div>
       </div>
-      <div class="stamp">Ref&nbsp; <b>ASTM&nbsp;A370&#8209;24a</b>&nbsp; Tables&nbsp;2&ndash;5</div>
+      <div class="stamp">Ref&nbsp; <b>ASTM&nbsp;A370&#8209;24a</b>&nbsp; Tables&nbsp;2&ndash;5&nbsp; &middot;&nbsp; <b>E29&#8209;22</b>&nbsp; rounding</div>
     </div>
   </header>
 
@@ -286,10 +285,12 @@ footer .mono{color:var(--ink-dim)}
   <div id="results"></div>
 
   <details class="notes">
-    <summary><span>Reading the results, portable designations &amp; A370 cautions</span><span class="chev">&#9656;</span></summary>
+    <summary><span>E29 rounding, portable designations &amp; A370 cautions</span><span class="chev">&#9656;</span></summary>
     <div class="body">
-      <p><strong>Convert from any scale.</strong> Choose any scale in the active table under &ldquo;Convert from&rdquo; and enter a value; the tool locates the matching table row(s) on that scale and reads across the rest. Because A370 tables are keyed on Rockwell C and B, entering on another scale finds the Rockwell row(s) whose listed value matches yours.</p>
-      <p><strong>Bracketing.</strong> When your entry falls between two printed rows, both bracketing rows are shown so you can apply your own judgment &mdash; the standard does not define interpolation. A value on an exact row shows that single row. Some scales (Brinell, tensile) are blank over part of the range in A370; a blank cell means the standard lists no value there.</p>
+      <p><strong>Convert from any scale.</strong> Choose any scale in the active table under &ldquo;Convert from&rdquo; and enter a value; the tool locates the matching table row on that scale and reads across the rest. Because A370 tables are keyed on Rockwell C and B, entering on another scale finds the Rockwell row(s) whose listed value matches yours.</p>
+      <p><strong>Values between table rows &mdash; ASTM E29 rounding.</strong> A370's tables are discrete, so a reading that falls between two printed rows is <em>rounded to the nearest listed value</em> using the rounding method of ASTM E29-22 Section 7.4, and that single row is then read across. The conversion is never interpolated: E29 governs rounding and significant digits, not interpolation, and A370 defines no interpolation between rows. The input cell shows the value actually used and notes the as-measured value it came from.</p>
+      <p><strong>The half-to-even rule (E29 7.4.3).</strong> When a value sits exactly halfway, E29 does not round half up. The digit in the last retained place is increased only if it is odd, and left unchanged if it is even &mdash; so 45.5 HRC rounds to <span class="mono">46</span>, but 46.5 HRC also rounds to <span class="mono">46</span>. If any non-zero digit follows the 5 (45.51), the value rounds up. Readings below the halfway point round down (7.4.1) and above it round up (7.4.2). Rounding is done in one step from the value you enter, per E29 7.5.</p>
+      <p><strong>Output rounding.</strong> Converted values are reported to each scale's normal unit per E29 &mdash; whole numbers for Rockwell C/B, Vickers, Brinell, Knoop and tensile, and one decimal for Rockwell A and the superficial scales. This also satisfies A370 16.1, which requires converted Rockwell and Vickers numbers to be rounded to the nearest whole number. Some scales (Brinell, tensile) are blank over part of the range in A370; a blank cell means the standard lists no value there.</p>
       <p><strong>Which table applies.</strong> Nonaustenitic steels use Tables 2 (Rockwell C basis) and 3 (Rockwell B basis); austenitic steels use Tables 4 and 5. The nonaustenitic tables have been shown applicable to ferritic and martensitic stainless but <strong>must not</strong> be used for austenitic stainless.</p>
       <ul>
         <li><strong>All converted numbers are approximate.</strong> Converted Rockwell and Vickers numbers round to the nearest whole number. Apply with care.</li>
@@ -311,7 +312,7 @@ footer .mono{color:var(--ink-dim)}
   </details>
 
   <footer>
-    <div>Data transcribed from <span class="mono">ASTM A370-24a</span>, &ldquo;Standard Test Methods and Definitions for Mechanical Testing of Steel Products,&rdquo; Tables 2, 3, 4, and 5. This tool is a lookup aid and does not replace the standard. Confirm critical values against a controlled copy of A370.</div>
+    <div>Data transcribed from <span class="mono">ASTM A370-24a</span>, &ldquo;Standard Test Methods and Definitions for Mechanical Testing of Steel Products,&rdquo; Tables 2, 3, 4, and 5. Rounding follows <span class="mono">ASTM E29-22</span>, Standard Practice for Using Significant Digits in Test Data to Determine Conformance with Specifications, Section 7.4. This tool is a lookup aid and does not replace either standard. Confirm critical values against a controlled copy of A370.</div>
   </footer>
 </div>
 
@@ -546,6 +547,7 @@ const SCALE_META = {
 <script>
 (function(){
   var state={ type:"nonaustenitic", scale:"HRC", value:null };
+  var lastLoc=null;
 
   var el={
     typeSeg:document.getElementById("typeSeg"),
@@ -612,34 +614,68 @@ const SCALE_META = {
   function trimNum(v){ if(v===Math.round(v)) return String(Math.round(v)); return String(v); }
   function escapeHtml(s){return String(s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];});}
 
+  /* ---- ASTM E29-22 rounding ----------------------------------------------
+     7.4.1  digit beyond last place < 5  -> retain unchanged
+     7.4.2  digit beyond last place > 5  -> increase by 1
+     7.4.3  exactly 5 (or 5 then zeros)  -> round to the EVEN digit;
+            if non-zero digits follow the 5, increase by 1.
+     7.5    round in ONE step from the most precise value available.
+     7.7    rounding to an arbitrary interval: divide, round, multiply.
+     ------------------------------------------------------------------------ */
+  function e29Round(value, interval){
+    if(!interval || interval<=0) return value;
+    var q = value/interval;
+    var qr = Math.round(q*1e9)/1e9;      // clear binary-float noise before the .5 test
+    var fl = Math.floor(qr);
+    var frac = qr - fl;
+    var n;
+    if(frac > 0.5)      n = fl + 1;      // 7.4.2 (and 7.4.3 non-zero beyond the 5)
+    else if(frac < 0.5) n = fl;          // 7.4.1
+    else                n = (fl % 2 === 0) ? fl : fl + 1;  // 7.4.3 half-to-even
+    var out = n*interval;
+    // snap to the interval's own decimal place so 0.6000000000000001 -> 0.6
+    var dec = (String(interval).split(".")[1]||"").length;
+    return parseFloat(out.toFixed(Math.min(dec+2,10)));
+  }
+  function decimalsToInterval(dec){ return dec===0 ? 1 : Math.pow(10,-dec); }
+
+  /* Round the INPUT to the nearest available value on its own column (E29 7.4),
+     then take that single table row. No interpolation: A370 tables are discrete
+     and E29 governs rounding, not interpolation. */
   function locateByCol(t,col,val){
     var idx=t.cols.indexOf(col);
     var rows=t.rows;
     var exacts=rows.filter(function(r){return r[idx]===val;});
-    if(exacts.length){ return {exact:exacts[0]}; }
+    if(exacts.length){ return {exact:exacts[0], rounded:false, applied:val}; }
     var nn=rows.map(function(r){return r[idx];}).filter(function(v){return v!==null&&v!==undefined;});
     if(nn.length===0) return {oor:true,lo:null,hi:null};
     var lo=Math.min.apply(null,nn), hi=Math.max.apply(null,nn);
     if(val<lo||val>hi) return {oor:true,lo:lo,hi:hi};
-    var prev=null, prevRow=null, best=null, bestGap=Infinity;
+
+    // Candidate rows: the nearest listed value below and above on this column.
+    var below=null, above=null;
     for(var i=0;i<rows.length;i++){
       var cv=rows[i][idx];
       if(cv===null||cv===undefined) continue;
-      if(prev!==null){
-        var mn=Math.min(prev,cv), mx=Math.max(prev,cv);
-        if(val>=mn && val<=mx){
-          var gap=mx-mn;
-          if(gap<bestGap){ bestGap=gap; best={a:prevRow,b:rows[i]}; }
-        }
-      }
-      prev=cv; prevRow=rows[i];
+      if(cv<=val && (below===null || cv>below.v)) below={v:cv,row:rows[i]};
+      if(cv>=val && (above===null || cv<above.v)) above={v:cv,row:rows[i]};
     }
-    if(best){
-      var above = best.a[0] > best.b[0] ? best.a : best.b;
-      var below = best.a[0] > best.b[0] ? best.b : best.a;
-      return {above:above, below:below};
+    if(!below && !above) return {oor:true,lo:lo,hi:hi};
+    if(!below) return {exact:above.row, rounded:true, applied:above.v, from:val};
+    if(!above) return {exact:below.row, rounded:true, applied:below.v, from:val};
+
+    // E29: round to whichever listed value is nearest; on an exact tie use
+    // half-to-even on the step between the two candidates (7.4.3).
+    var dBelow = val - below.v, dAbove = above.v - val;
+    var pick;
+    if(dBelow < dAbove)      pick = below;
+    else if(dAbove < dBelow) pick = above;
+    else {
+      var step = above.v - below.v;
+      var rounded = e29Round(val, step);          // half-to-even on the table step
+      pick = (Math.abs(rounded-below.v) < Math.abs(rounded-above.v)) ? below : above;
     }
-    return {oor:true,lo:lo,hi:hi};
+    return {exact:pick.row, rounded:true, applied:pick.v, from:val};
   }
 
   function resolveInput(){
@@ -669,41 +705,35 @@ const SCALE_META = {
       var meta=SCALE_META[dk]; if(!meta) return;
       var isAnchor=(dk===inputScale);
       var isTS=(dk==="TS_ksi"||dk==="TS_MPa");
-      var inner;
-      if(loc.exact){
-        if(isAnchor){
-          inner='<div class="vals"><span class="v">'+escapeHtml(trimNum(state.value))+'</span><span class="u">'+meta.unit+'</span></div>';
-        } else {
-          inner=valMarkup(colValue(t,loc.exact,colName),meta);
+      var raw=colValue(t,loc.exact,colName);
+      var inner, extra="";
+
+      if(isAnchor){
+        // Show the value actually used for lookup; note the as-measured value if rounded.
+        inner='<div class="vals"><span class="v">'+escapeHtml(fmtNum(loc.applied,meta.decimals))+'</span><span class="u">'+meta.unit+'</span></div>';
+        if(loc.rounded){
+          extra='<div class="bracket">as measured '+escapeHtml(trimNum(loc.from))+' &rarr; E29 rounded</div>';
         }
-        cells.push(cellHTML(dk,meta,inner,isAnchor,isTS,false));
+        cells.push(cellHTML(dk,meta,inner+extra,true,isTS,false));
       } else {
-        if(isAnchor){
-          inner='<div class="vals"><span class="v">'+escapeHtml(trimNum(state.value))+'</span><span class="u">'+meta.unit+'</span></div>'+
-            '<div class="bracket">between '+matchRange(loc,t,colName,meta)+'</div>';
-          cells.push(cellHTML(dk,meta,inner,true,isTS,false));
-        } else {
-          var vB=colValue(t,loc.below,colName), vA=colValue(t,loc.above,colName);
-          cells.push(cellHTML(dk,meta,twoMarkup(vB,vA,meta),false,isTS,true));
-        }
+        inner=valMarkup(raw,meta);
+        cells.push(cellHTML(dk,meta,inner,false,isTS,false));
       }
     });
     return cells.join("");
   }
 
-  function matchRange(loc,t,colName,meta){
-    var vB=colValue(t,loc.below,colName), vA=colValue(t,loc.above,colName);
-    var b=(vB==null)?"&mdash;":fmt(vB,meta.decimals), a=(vA==null)?"&mdash;":fmt(vA,meta.decimals);
-    return b+" &ndash; "+a+" "+meta.unit;
-  }
+  /* Outputs are rounded per E29 7.4 to the reporting unit of each scale.
+     A370 16.1 additionally requires converted Rockwell and Vickers numbers
+     to be reported as whole numbers. */
   function valMarkup(v,meta){
     if(v===null||v===undefined) return '<div class="vals"><span class="none">&mdash;</span></div><div class="bracket">no value in table</div>';
-    return '<div class="vals"><span class="v">'+fmt(v,meta.decimals)+'</span><span class="u">'+meta.unit+'</span></div>';
+    var rounded=e29Round(v, decimalsToInterval(meta.decimals));
+    return '<div class="vals"><span class="v">'+fmtNum(rounded,meta.decimals)+'</span><span class="u">'+meta.unit+'</span></div>';
   }
-  function twoMarkup(vB,vA,meta){
-    var a=(vA==null)?null:fmt(vA,meta.decimals), b=(vB==null)?null:fmt(vB,meta.decimals);
-    if(a===null&&b===null) return '<div class="vals"><span class="none">&mdash;</span></div><div class="bracket">no value in this range</div>';
-    return '<div class="vals"><span class="v">'+(b===null?"&mdash;":b)+'</span><span class="u" style="margin:0 -2px">&ndash;</span><span class="v">'+(a===null?"&mdash;":a)+'</span><span class="u">'+meta.unit+'</span></div><div class="bracket">bracketing rows</div>';
+  function fmtNum(v,dec){
+    if(v===null||v===undefined) return "\u2014";
+    return dec===0 ? String(Math.round(v)) : v.toFixed(dec);
   }
   function cellHTML(dk,meta,inner,isAnchor,isTS,two){
     var cls="cell"; if(isAnchor)cls+=" anchor"; if(isTS)cls+=" ts"; if(two)cls+=" two";
@@ -747,12 +777,13 @@ const SCALE_META = {
       setStatus("warn","Out of range for "+t.source+". No conversion available.");
       el.printBtn.disabled=true; return;
     }
+    lastLoc=loc;
     el.results.innerHTML='<div class="grid">'+buildCells(t,loc,state.scale)+'</div>';
     el.printBtn.disabled=false;
-    if(loc.exact){
-      setStatus("exact","Exact table row \u2014 "+t.source+".");
+    if(loc.rounded){
+      setStatus("info","Input rounded "+trimNum(loc.from)+" \u2192 "+fmtNum(loc.applied,m.decimals)+" "+m.unit+" per ASTM E29 7.4, then read from "+t.source+".");
     } else {
-      setStatus("info","Between rows on the "+m.label+" column \u2014 both shown; A370 does not define interpolation.");
+      setStatus("exact","Exact table row \u2014 "+t.source+".");
     }
     updatePrintStamp(t);
   }
@@ -761,7 +792,10 @@ const SCALE_META = {
     var m=SCALE_META[state.scale];
     var d=new Date(); var pad=function(n){return (n<10?"0":"")+n;};
     var dateStr=d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
-    el.printStamp.innerHTML="Input "+trimNum(state.value)+" "+m.unit+" \u00b7 "+(state.type==="austenitic"?"austenitic":"nonaustenitic")+" \u00b7 "+t.source+" \u00b7 ASTM A370-24a \u00b7 generated "+dateStr;
+    var inputTxt = lastLoc && lastLoc.rounded
+      ? ("Input "+trimNum(lastLoc.from)+" "+m.unit+" \u2192 "+fmtNum(lastLoc.applied,m.decimals)+" "+m.unit+" (E29 7.4)")
+      : ("Input "+trimNum(state.value)+" "+m.unit+" (exact row)");
+    el.printStamp.innerHTML=inputTxt+" \u00b7 "+(state.type==="austenitic"?"austenitic":"nonaustenitic")+" \u00b7 "+t.source+" \u00b7 ASTM A370-24a \u00b7 values rounded per ASTM E29-22 \u00b7 generated "+dateStr;
   }
 
   el.typeSeg.addEventListener("click",function(e){var b=e.target.closest("button");if(b)setType(b.dataset.type);});
