@@ -222,7 +222,7 @@ footer .mono{color:var(--ink-dim)}
     <div class="head-inner">
       <div class="title-block">
         <h1>Steel Hardness Converter</h1>
-        <div class="sub">Cross-scale conversion by direct table lookup, rounded per ASTM E29</div>
+        <div class="sub">Conservative step-down table lookup &mdash; results rounded per ASTM E29</div>
       </div>
       <div class="stamp">Ref&nbsp; <b>ASTM&nbsp;A370&#8209;24a</b>&nbsp; Tables&nbsp;2&ndash;5&nbsp; &middot;&nbsp; <b>E29&#8209;22</b>&nbsp; rounding</div>
     </div>
@@ -285,12 +285,12 @@ footer .mono{color:var(--ink-dim)}
   <div id="results"></div>
 
   <details class="notes">
-    <summary><span>E29 rounding, portable designations &amp; A370 cautions</span><span class="chev">&#9656;</span></summary>
+    <summary><span>Step-down lookup, E29 rounding &amp; A370 cautions</span><span class="chev">&#9656;</span></summary>
     <div class="body">
       <p><strong>Convert from any scale.</strong> Choose any scale in the active table under &ldquo;Convert from&rdquo; and enter a value; the tool locates the matching table row on that scale and reads across the rest. Because A370 tables are keyed on Rockwell C and B, entering on another scale finds the Rockwell row(s) whose listed value matches yours.</p>
-      <p><strong>Values between table rows &mdash; ASTM E29 rounding.</strong> A370's tables are discrete, so a reading that falls between two printed rows is <em>rounded to the nearest listed value</em> using the rounding method of ASTM E29-22 Section 7.4, and that single row is then read across. The conversion is never interpolated: E29 governs rounding and significant digits, not interpolation, and A370 defines no interpolation between rows. The input cell shows the value actually used and notes the as-measured value it came from.</p>
-      <p><strong>The half-to-even rule (E29 7.4.3).</strong> When a value sits exactly halfway, E29 does not round half up. The digit in the last retained place is increased only if it is odd, and left unchanged if it is even &mdash; so 45.5 HRC rounds to <span class="mono">46</span>, but 46.5 HRC also rounds to <span class="mono">46</span>. If any non-zero digit follows the 5 (45.51), the value rounds up. Readings below the halfway point round down (7.4.1) and above it round up (7.4.2). Rounding is done in one step from the value you enter, per E29 7.5.</p>
-      <p><strong>Output rounding.</strong> Converted values are reported to each scale's normal unit per E29 &mdash; whole numbers for Rockwell C/B, Vickers, Brinell, Knoop and tensile, and one decimal for Rockwell A and the superficial scales. This also satisfies A370 16.1, which requires converted Rockwell and Vickers numbers to be rounded to the nearest whole number. Some scales (Brinell, tensile) are blank over part of the range in A370; a blank cell means the standard lists no value there.</p>
+      <p><strong>Values between table rows &mdash; conservative step-down.</strong> A370's tables are discrete. When a reading falls between two printed rows, this tool resolves it to the row representing the <strong>lower hardness</strong> &mdash; never the higher one &mdash; and reads that single row across. Converting upward would credit the material with hardness it has not demonstrated, so the step is always taken in the conservative direction for acceptance work. Example: a Knoop reading of <span class="mono">825 HK</span> falls between the listed <span class="mono">822</span> (64 HRC) and <span class="mono">846</span> (65 HRC); it resolves to <span class="mono">822</span>, giving <span class="mono">64 HRC</span>. A reading that lands exactly on a printed value is used as-is with no adjustment.</p>
+      <p><strong>Direction on inverted scales.</strong> Lower hardness is not always the lower number. On Brinell indentation diameter (Table 5) a larger diameter means softer material, so the conservative step there is toward the <em>larger</em> diameter. The tool accounts for this; the input cell always shows the value actually used alongside the value you entered.</p>
+      <p><strong>Output rounding &mdash; ASTM E29-22.</strong> The step-down above selects the table row; it is not a rounding operation. Rounding is applied to the <em>reported results</em> using the rounding method of ASTM E29-22 Section 7.4, including the half-to-even convention of 7.4.3: the digit in the last retained place is increased only if it is odd, so a value of 45.5 reports as <span class="mono">46</span> while 46.5 reports as <span class="mono">46</span>. Results are given to each scale's normal unit &mdash; whole numbers for Rockwell C/B, Vickers, Brinell, Knoop and tensile, one decimal for Rockwell A and the superficial scales &mdash; which also satisfies A370 16.1, requiring converted Rockwell and Vickers numbers to be rounded to the nearest whole number. Some scales (Brinell, tensile) are blank over part of the range in A370; a blank cell means the standard lists no value there.</p>
       <p><strong>Which table applies.</strong> Nonaustenitic steels use Tables 2 (Rockwell C basis) and 3 (Rockwell B basis); austenitic steels use Tables 4 and 5. The nonaustenitic tables have been shown applicable to ferritic and martensitic stainless but <strong>must not</strong> be used for austenitic stainless.</p>
       <ul>
         <li><strong>All converted numbers are approximate.</strong> Converted Rockwell and Vickers numbers round to the nearest whole number. Apply with care.</li>
@@ -312,7 +312,7 @@ footer .mono{color:var(--ink-dim)}
   </details>
 
   <footer>
-    <div>Data transcribed from <span class="mono">ASTM A370-24a</span>, &ldquo;Standard Test Methods and Definitions for Mechanical Testing of Steel Products,&rdquo; Tables 2, 3, 4, and 5. Rounding follows <span class="mono">ASTM E29-22</span>, Standard Practice for Using Significant Digits in Test Data to Determine Conformance with Specifications, Section 7.4. This tool is a lookup aid and does not replace either standard. Confirm critical values against a controlled copy of A370.</div>
+    <div>Data transcribed from <span class="mono">ASTM A370-24a</span>, &ldquo;Standard Test Methods and Definitions for Mechanical Testing of Steel Products,&rdquo; Tables 2, 3, 4, and 5. Readings between table rows are resolved to the lower-hardness row. Reported results are rounded per <span class="mono">ASTM E29-22</span>, Standard Practice for Using Significant Digits in Test Data to Determine Conformance with Specifications, Section 7.4. This tool is a lookup aid and does not replace either standard. Confirm critical values against a controlled copy of A370.</div>
   </footer>
 </div>
 
@@ -639,43 +639,53 @@ const SCALE_META = {
   }
   function decimalsToInterval(dec){ return dec===0 ? 1 : Math.pow(10,-dec); }
 
-  /* Round the INPUT to the nearest available value on its own column (E29 7.4),
-     then take that single table row. No interpolation: A370 tables are discrete
-     and E29 governs rounding, not interpolation. */
+  /* ---- Input lookup: conservative step-DOWN ------------------------------
+     A370's tables are discrete. A reading that falls between two printed rows
+     is resolved to the row representing the LOWER hardness — never the higher.
+     Rationale: converting upward would credit a part with hardness it has not
+     demonstrated. Exact matches are used as-is.
+
+     "Lower hardness" is not always the lower number. On Brinell indentation
+     diameter (Table 5) a LARGER diameter means SOFTER material, so the
+     conservative step there is toward the larger diameter. INVERTED_SCALES
+     lists any column where value and hardness run in opposite directions.
+
+     Note: E29 rounding is NOT applied to this lookup step. E29 governs the
+     reporting of the converted results (see valMarkup), not the selection of
+     a table row. ---------------------------------------------------------- */
+  var INVERTED_SCALES = { BrinellDia: true };
+
   function locateByCol(t,col,val){
     var idx=t.cols.indexOf(col);
     var rows=t.rows;
+    var inverted = !!INVERTED_SCALES[col];
+
     var exacts=rows.filter(function(r){return r[idx]===val;});
-    if(exacts.length){ return {exact:exacts[0], rounded:false, applied:val}; }
+    if(exacts.length){ return {exact:exacts[0], stepped:false, applied:val}; }
+
     var nn=rows.map(function(r){return r[idx];}).filter(function(v){return v!==null&&v!==undefined;});
     if(nn.length===0) return {oor:true,lo:null,hi:null};
     var lo=Math.min.apply(null,nn), hi=Math.max.apply(null,nn);
     if(val<lo||val>hi) return {oor:true,lo:lo,hi:hi};
 
-    // Candidate rows: the nearest listed value below and above on this column.
-    var below=null, above=null;
+    // Nearest listed value on each side of the reading.
+    var lower=null, upper=null;   // by numeric value on this column
     for(var i=0;i<rows.length;i++){
       var cv=rows[i][idx];
       if(cv===null||cv===undefined) continue;
-      if(cv<=val && (below===null || cv>below.v)) below={v:cv,row:rows[i]};
-      if(cv>=val && (above===null || cv<above.v)) above={v:cv,row:rows[i]};
+      if(cv<val && (lower===null || cv>lower.v)) lower={v:cv,row:rows[i]};
+      if(cv>val && (upper===null || cv<upper.v)) upper={v:cv,row:rows[i]};
     }
-    if(!below && !above) return {oor:true,lo:lo,hi:hi};
-    if(!below) return {exact:above.row, rounded:true, applied:above.v, from:val};
-    if(!above) return {exact:below.row, rounded:true, applied:below.v, from:val};
 
-    // E29: round to whichever listed value is nearest; on an exact tie use
-    // half-to-even on the step between the two candidates (7.4.3).
-    var dBelow = val - below.v, dAbove = above.v - val;
-    var pick;
-    if(dBelow < dAbove)      pick = below;
-    else if(dAbove < dBelow) pick = above;
-    else {
-      var step = above.v - below.v;
-      var rounded = e29Round(val, step);          // half-to-even on the table step
-      pick = (Math.abs(rounded-below.v) < Math.abs(rounded-above.v)) ? below : above;
-    }
-    return {exact:pick.row, rounded:true, applied:pick.v, from:val};
+    // Softer side: normally the lower number; on inverted scales the higher one.
+    var softer = inverted ? upper : lower;
+    var harder = inverted ? lower : upper;
+
+    if(softer) return {exact:softer.row, stepped:true, applied:softer.v, from:val, inverted:inverted};
+    // Reading sits below the softest listed value on this column: only the
+    // harder neighbour exists, so use it and say so.
+    if(harder) return {exact:harder.row, stepped:true, applied:harder.v, from:val, inverted:inverted, noSofter:true};
+    return {oor:true,lo:lo,hi:hi};
   }
 
   function resolveInput(){
@@ -711,8 +721,9 @@ const SCALE_META = {
       if(isAnchor){
         // Show the value actually used for lookup; note the as-measured value if rounded.
         inner='<div class="vals"><span class="v">'+escapeHtml(fmtNum(loc.applied,meta.decimals))+'</span><span class="u">'+meta.unit+'</span></div>';
-        if(loc.rounded){
-          extra='<div class="bracket">as measured '+escapeHtml(trimNum(loc.from))+' &rarr; E29 rounded</div>';
+        if(loc.stepped){
+          var dir = loc.noSofter ? "next listed" : "stepped down";
+          extra='<div class="bracket">as measured '+escapeHtml(trimNum(loc.from))+' &rarr; '+dir+'</div>';
         }
         cells.push(cellHTML(dk,meta,inner+extra,true,isTS,false));
       } else {
@@ -780,10 +791,14 @@ const SCALE_META = {
     lastLoc=loc;
     el.results.innerHTML='<div class="grid">'+buildCells(t,loc,state.scale)+'</div>';
     el.printBtn.disabled=false;
-    if(loc.rounded){
-      setStatus("info","Input rounded "+trimNum(loc.from)+" \u2192 "+fmtNum(loc.applied,m.decimals)+" "+m.unit+" per ASTM E29 7.4, then read from "+t.source+".");
+    if(loc.stepped){
+      if(loc.noSofter){
+        setStatus("warn","No lower row on this scale \u2014 used nearest listed value "+fmtNum(loc.applied,m.decimals)+" "+m.unit+" ("+t.source+"). Verify before use.");
+      } else {
+        setStatus("info","Between rows \u2014 stepped down to "+fmtNum(loc.applied,m.decimals)+" "+m.unit+" (lower hardness) and read from "+t.source+". Results rounded per ASTM E29.");
+      }
     } else {
-      setStatus("exact","Exact table row \u2014 "+t.source+".");
+      setStatus("exact","Exact table row \u2014 "+t.source+". Results rounded per ASTM E29.");
     }
     updatePrintStamp(t);
   }
@@ -792,10 +807,10 @@ const SCALE_META = {
     var m=SCALE_META[state.scale];
     var d=new Date(); var pad=function(n){return (n<10?"0":"")+n;};
     var dateStr=d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
-    var inputTxt = lastLoc && lastLoc.rounded
-      ? ("Input "+trimNum(lastLoc.from)+" "+m.unit+" \u2192 "+fmtNum(lastLoc.applied,m.decimals)+" "+m.unit+" (E29 7.4)")
+    var inputTxt = lastLoc && lastLoc.stepped
+      ? ("Input "+trimNum(lastLoc.from)+" "+m.unit+" \u2192 "+fmtNum(lastLoc.applied,m.decimals)+" "+m.unit+" (stepped down to lower hardness)")
       : ("Input "+trimNum(state.value)+" "+m.unit+" (exact row)");
-    el.printStamp.innerHTML=inputTxt+" \u00b7 "+(state.type==="austenitic"?"austenitic":"nonaustenitic")+" \u00b7 "+t.source+" \u00b7 ASTM A370-24a \u00b7 values rounded per ASTM E29-22 \u00b7 generated "+dateStr;
+    el.printStamp.innerHTML=inputTxt+" \u00b7 "+(state.type==="austenitic"?"austenitic":"nonaustenitic")+" \u00b7 "+t.source+" \u00b7 ASTM A370-24a \u00b7 results rounded per ASTM E29-22 \u00b7 generated "+dateStr;
   }
 
   el.typeSeg.addEventListener("click",function(e){var b=e.target.closest("button");if(b)setType(b.dataset.type);});
