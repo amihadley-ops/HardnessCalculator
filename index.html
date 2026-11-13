@@ -863,6 +863,7 @@ const SCALE_META = {
   el.typeSeg.addEventListener("click",function(e){var b=e.target.closest("button");if(b)setType(b.dataset.type);});
   el.scaleSel.addEventListener("change",function(){ state.scale=el.scaleSel.value; state.basisChoice=null; syncUnit(); render(); });
   el.inVal.addEventListener("input",function(){
+    state.basisChoice=null;
     var raw=el.inVal.value.trim();
     if(raw===""){state.value=null;render();return;}
     var n=parseFloat(raw); state.value=isNaN(n)?null:n; render();
