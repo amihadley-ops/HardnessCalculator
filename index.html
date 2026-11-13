@@ -546,7 +546,7 @@ const SCALE_META = {
 </script>
 <script>
 (function(){
-  var state={ type:"nonaustenitic", scale:"HRC", value:null };
+  var state={ type:"nonaustenitic", scale:"HRC", value:null, basisChoice:null };
   var lastLoc=null;
 
   var el={
@@ -564,6 +564,11 @@ const SCALE_META = {
     reportMeta:document.getElementById("reportMeta"),
     printStamp:document.getElementById("printStamp")
   };
+
+  var tableChoice=document.createElement("div");
+  tableChoice.id="tableChoice";
+  tableChoice.style.cssText="display:none;margin:10px 0;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);";
+  el.rangeHint.insertAdjacentElement("afterend",tableChoice);
 
   var DISPLAY_ORDER=["HRC","HRB","HRA","HR15N","HR30N","HR45N","HRF","HR15T","HR30T","HR45T","HV","HBW","Knoop","BrinellDia","TS_ksi","TS_MPa"];
 
@@ -693,13 +698,42 @@ const SCALE_META = {
     if(locs.length===0) return null;
     if(state.scale==="HRC") return locs.find(function(l){return l.basis==="C";})||locs[0];
     if(state.scale==="HRB") return locs.find(function(l){return l.basis==="B";})||locs[0];
-    if(locs.length>1 && state.value!==null && !isNaN(state.value)){
-      for(var i=0;i<locs.length;i++){
-        var r=locateByCol(locs[i].table,locs[i].col,state.value);
-        if(!r.oor) return locs[i];
+    if(state.value!==null && !isNaN(state.value)){
+      var candidates=locs.map(function(l){
+        return {location:l,lookup:locateByCol(l.table,l.col,state.value)};
+      }).filter(function(c){return !c.lookup.oor;});
+      if(state.basisChoice){
+        var chosen=candidates.find(function(c){return c.location.basis===state.basisChoice;});
+        if(chosen) return chosen.location;
       }
+      if(candidates.length>1) return {ambiguous:candidates};
+      if(candidates.length===1) return candidates[0].location;
     }
     return locs[0];
+  }
+
+  function showTableChoice(candidates){
+    tableChoice.style.display="block";
+    tableChoice.innerHTML="";
+    var heading=document.createElement("div");
+    heading.textContent="Choose the ASTM table basis";
+    heading.style.cssText="font-weight:700;margin-bottom:5px;";
+    var note=document.createElement("div");
+    note.textContent="This reading falls within more than one applicable table. Select the basis that matches the test range/material condition being evaluated; the calculator will not guess.";
+    note.style.cssText="font-size:13px;line-height:1.45;color:var(--muted);margin-bottom:10px;";
+    tableChoice.appendChild(heading);
+    tableChoice.appendChild(note);
+    candidates.forEach(function(c){
+      var loc=c.location, t=loc.table, idx=t.cols.indexOf(loc.col);
+      var vals=t.rows.map(function(r){return r[idx];}).filter(function(v){return v!==null&&v!==undefined;});
+      var lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
+      var btn=document.createElement("button");
+      btn.type="button";
+      btn.textContent=t.source+" — "+(loc.basis==="C"?"HRC-based table":"HRB-based table")+" ("+fmt(lo,SCALE_META[state.scale].decimals)+"–"+fmt(hi,SCALE_META[state.scale].decimals)+" "+SCALE_META[state.scale].unit+")";
+      btn.style.cssText="display:block;width:100%;text-align:left;margin:6px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);cursor:pointer;font:inherit;";
+      btn.addEventListener("click",function(){state.basisChoice=loc.basis;render();});
+      tableChoice.appendChild(btn);
+    });
   }
 
   function colValue(t,row,colName){ var idx=t.cols.indexOf(colName); if(idx===-1) return undefined; return row[idx]; }
@@ -756,6 +790,7 @@ const SCALE_META = {
 
   function setType(tp){
     state.type=tp;
+    state.basisChoice=null;
     [].forEach.call(el.typeSeg.children,function(b){b.setAttribute("aria-pressed",b.dataset.type===tp);});
     buildScaleOptions();
     syncUnit();
@@ -770,7 +805,19 @@ const SCALE_META = {
   function render(){
     var res=resolveInput();
     var m=SCALE_META[state.scale];
-    if(!res){ el.results.innerHTML='<div class="empty">This scale is not available for the selected steel type.</div>'; setStatus("",""); el.printBtn.disabled=true; return; }
+    if(!res){ tableChoice.style.display="none"; el.results.innerHTML='<div class="empty">This scale is not available for the selected steel type.</div>'; setStatus("",""); el.printBtn.disabled=true; return; }
+    if(res.ambiguous){
+      var names=res.ambiguous.map(function(c){return c.location.table.source;}).join(" and ");
+      el.rangeHint.textContent="More than one table applies to this reading ("+names+").";
+      el.srcNote.textContent="Table selection required · "+(state.type==="austenitic"?"austenitic":"nonaustenitic")+" basis";
+      showTableChoice(res.ambiguous);
+      el.results.innerHTML='<div class="empty">Choose the applicable table above to display the conversion.</div>';
+      setStatus("warn","Table basis is ambiguous. Select the correct ASTM table before using the conversion.");
+      el.printBtn.disabled=true;
+      lastLoc=null;
+      return;
+    }
+    tableChoice.style.display="none";
     var t=res.table, col=res.col;
     var idx=t.cols.indexOf(col);
     var nn=t.rows.map(function(r){return r[idx];}).filter(function(v){return v!==null&&v!==undefined;});
@@ -814,7 +861,7 @@ const SCALE_META = {
   }
 
   el.typeSeg.addEventListener("click",function(e){var b=e.target.closest("button");if(b)setType(b.dataset.type);});
-  el.scaleSel.addEventListener("change",function(){ state.scale=el.scaleSel.value; syncUnit(); render(); });
+  el.scaleSel.addEventListener("change",function(){ state.scale=el.scaleSel.value; state.basisChoice=null; syncUnit(); render(); });
   el.inVal.addEventListener("input",function(){
     var raw=el.inVal.value.trim();
     if(raw===""){state.value=null;render();return;}
